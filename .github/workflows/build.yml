@@ -36,3 +36,25 @@ jobs:
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Install Release
+        if: matrix.preset == 'x64-release'
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        run: cmake --install out/build/x64-release --prefix out/package
+
+      - name: Create ZIP
+        if: matrix.preset == 'x64-release'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "out/package/*" `
+            -DestinationPath "Solitaire-Windows-x64.zip" `
+            -Force
+
+      - name: Upload Release Package
+        if: matrix.preset == 'x64-release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Solitaire-Windows-x64
+          path: Solitaire-Windows-x64.zip
