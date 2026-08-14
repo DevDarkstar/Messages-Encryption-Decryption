@@ -18,5 +18,7 @@ namespace solitaire {
 		static std::string convertUTF8ToPrintableCharacters(std::string_view message);
 		static std::string convertPrintableCharactersToUTF8(std::string_view message);
 		static unsigned getRandomStride(unsigned minStride, unsigned maxStride);
+		static std::optional<std::string> getMessageFromGeneratedImage(std::span<const unsigned char> image, std::string& errorMessage);
+		static std::optional<std::string> getMessageFromExistingImage(std::span<const unsigned char> image, int numberOfChannels, std::string& errorMessage);
 	};
 }

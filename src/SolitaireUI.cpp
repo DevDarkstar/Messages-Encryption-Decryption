@@ -52,7 +52,7 @@ void SolitaireUI::resetImageParameters(Image& params) {
     params.data = std::nullopt;
     params.width = 400;
     params.height = 400;
-    params.channels = 3;
+    params.channels = 4;
 }
 
 void SolitaireUI::resetUIStateVariables() {
@@ -151,7 +151,6 @@ int SolitaireUI::init() {
         // End of ImGui frame
         ImGui::Render();
 
-        // (e) Préparation du viewport OpenGL et effacement de l'écran
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
@@ -323,7 +322,7 @@ void SolitaireUI::createEncryptionUI() {
                     else
                         snprintf(this->infosBuffer, sizeof(this->infosBuffer), "Image '%s'\nhas been saved successfully.", selection.c_str());
                     deleteImageTexture(this->imageTexture);
-                    this->generatedImageData.data = {};
+                    this->generatedImageData.data = std::nullopt;
                 }
             }
         }

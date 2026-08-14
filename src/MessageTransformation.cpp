@@ -232,18 +232,20 @@ std::optional<std::vector<unsigned char>> MessageTransformation::createImage(std
 
     std::vector<unsigned char> imageData{};
 
-    // If the user didn't provide any image to hide the encrypted message inside, the program will create a entire RGB image
+    // If the user didn't provide any image to hide the encrypted message inside, the program will create a RGBA image
     if (!image.data.has_value()) {
-        unsigned stride = MessageTransformation::getRandomStride(HeaderData::HEADER_SIZE, (image.width * image.height * image.channels) - static_cast<unsigned>(encryptedMessage.size()));
+        unsigned char type = 127; // Type of the image : 127 -> message hidden in a fully created image; 128 -> message hidden in an existing image
+        unsigned stride = MessageTransformation::getRandomStride(HeaderData::HEADER_SIZE + sizeof(type), (image.width * image.height * image.channels) - static_cast<unsigned>(encryptedMessage.size()));
 
         const std::vector<unsigned char> header = ImageHeader::createHeader({ messageToEncrypt.size(), seed, stride });
 
-        const size_t remainingCharactersLength = imageSize - (encryptedMessage.size() + HeaderData::HEADER_SIZE);
+        const size_t remainingCharactersLength = imageSize - (encryptedMessage.size() + HeaderData::HEADER_SIZE + sizeof(type));
 
         std::vector<unsigned char> remainingCharacters = MessageTransformation::generateRandomCharacters(remainingCharactersLength);
         unsigned char* remainingCharactersPtr = remainingCharacters.data();
         imageData.reserve(imageSize);
 
+        imageData.push_back(type);
         imageData.insert(imageData.end(), header.data(), header.data() + header.size());
         imageData.insert(imageData.end(), remainingCharactersPtr, remainingCharactersPtr + stride);
         remainingCharactersPtr += stride;
@@ -252,24 +254,28 @@ std::optional<std::vector<unsigned char>> MessageTransformation::createImage(std
     }
     // otherwise, the user has provided an image. In this case, two scenarios : the image has 3 channels (RGB) or 4 (RGBA)
     else {
+        unsigned char type = 128; // Type of the image : 127 -> message hidden in a fully created image; 128 -> message hidden in an existing image
         // If the image has 3 channels, the message will be stored contiguously in the image
         if (image.channels == 3) {
-            unsigned stride = imageSize - encryptedMessage.size() - HeaderData::HEADER_SIZE - 1;
+            unsigned stride = imageSize - encryptedMessage.size() - HeaderData::HEADER_SIZE - 1 - sizeof(type);
             std::vector<unsigned char> header = ImageHeader::createHeader({ messageToEncrypt.size(), seed, stride });
 
             imageData = *image.data;
-            std::copy(header.begin(), header.end(), imageData.begin());
-            std::copy(encryptedMessage.begin(), encryptedMessage.end(), imageData.begin() + (header.size() + static_cast<size_t>(stride)));
+            imageData[0] = type;
+            std::copy(header.begin(), header.end(), imageData.begin() + sizeof(type));
+            std::copy(encryptedMessage.begin(), encryptedMessage.end(), imageData.begin() + (header.size() + static_cast<size_t>(stride) + sizeof(type)));
         }
         // Else if the image has 4 channels, the message will be stored in the RGB channels, avoiding the alpha one
         else if (image.channels == 4) {
-            unsigned stride = imageSize - 2*encryptedMessage.size() - HeaderData::HEADER_SIZE - 1;
+            unsigned stride = imageSize - encryptedMessage.size() - encryptedMessage.size() / 3 - HeaderData::HEADER_SIZE - 1 - sizeof(type);
             std::vector<unsigned char> header = ImageHeader::createHeader({ messageToEncrypt.size(), seed, stride });
 
             imageData = *image.data;
+            imageData[0] = type;
             size_t headerPos = 0;
-            size_t imagePos = 0;
-            size_t pixelPos = 1;
+            // As we store the image type in the first channel of the image, then we start at the position 2 in the image and at the green channel of the first pixel in the image
+            size_t imagePos = 1;
+            size_t pixelPos = 2;
             for (; headerPos < HeaderData::HEADER_SIZE; ++imagePos) {
                 if (pixelPos % 4 == 0) {
                     pixelPos = 1;
@@ -280,8 +286,8 @@ std::optional<std::vector<unsigned char>> MessageTransformation::createImage(std
                 pixelPos++;
             }
 
-            imagePos = HeaderData::HEADER_SIZE + stride;
-            pixelPos = (HeaderData::HEADER_SIZE + stride) % 4 + 1;
+            imagePos = HeaderData::HEADER_SIZE + stride + sizeof(type);
+            pixelPos = (HeaderData::HEADER_SIZE + stride + sizeof(type)) % 4 + 1;
             size_t encryptedMessagePos = 0;
             for (; encryptedMessagePos < encryptedMessage.size(); ++imagePos) {
                 if (pixelPos % 4 == 0) {
@@ -305,75 +311,24 @@ std::optional<std::string> MessageTransformation::getMessageFromImage(std::span<
         errorMessage = "The number of channels of the image must be 3 or 4.";
         return std::nullopt;
     }
-    auto imagePtr = image.data();
-
-    std::optional<std::vector<unsigned char>> rawHeader;
-    if (numberOfChannels == 3)
-        rawHeader.emplace(imagePtr, imagePtr + HeaderData::HEADER_SIZE);
+    // Retrieve the first channel of the first pixel of the image (giving the type of image whom we will extract the encrypted message)
+    unsigned char type = image[0];
+    std::optional<std::string> decodedMessage;
+    // If the message has been stored in a generated image
+    if (type == 127)
+        decodedMessage = MessageTransformation::getMessageFromGeneratedImage(image, errorMessage);
+    // else if the message has been stored in an existing message
+    else if (type == 128)
+        decodedMessage = MessageTransformation::getMessageFromExistingImage(image, numberOfChannels, errorMessage);
     else {
-        rawHeader.emplace(HeaderData::HEADER_SIZE);
-        size_t headerPos = 0;
-        size_t imagePos = 0;
-        size_t pixelPos = 1;
-        for (; headerPos < HeaderData::HEADER_SIZE; ++imagePos) {
-            if (pixelPos % 4 == 0) {
-                pixelPos = 1;
-                continue;
-            }
-            (*rawHeader)[headerPos] = image[imagePos];
-            headerPos++;
-            pixelPos++;
-        }
-    }
-    std::optional<HeaderData> headerData = ImageHeader::getHeaderData(*rawHeader, image.size());
-    if (!headerData.has_value()) {
-        errorMessage = "Unable to extract the header from the image.";
-        return std::nullopt;
-    }
-    else {
-        if ((*headerData).messageLength > static_cast<size_t>(image.size() - HeaderData::HEADER_SIZE)) {
-            errorMessage = "Unable to extract a message from the image.\nThe message length is invalid or exceeds the image size.";
-            return std::nullopt;
-        }
-        else if ((*headerData).messageLength == 0) {
-            errorMessage = "The current image does not contain any message.";
-            return std::nullopt;
-        }
-    }
-    const size_t messageLength = (*headerData).messageLength;
-
-    std::optional<std::vector<unsigned char>> rawMessage;
-    if (numberOfChannels == 3) {
-        imagePtr += (HeaderData::HEADER_SIZE + (*headerData).stride);
-        rawMessage.emplace(imagePtr, imagePtr + messageLength);
-    }
-    else {
-        rawMessage.emplace((*headerData).messageLength);
-        size_t imagePos = HeaderData::HEADER_SIZE + (*headerData).stride;
-        size_t pixelPos = (HeaderData::HEADER_SIZE + (*headerData).stride) % 4 + 1;
-        size_t messagePos = 0;
-
-        for (; messagePos < messageLength; ++imagePos) {
-            if (pixelPos % 4 == 0) {
-                pixelPos = 1;
-                continue;
-            }
-            (*rawMessage)[messagePos] = image[imagePos];
-            messagePos++;
-            pixelPos++;
-        }
-    }
-	SolitaireAlgorithm algorithm;
-	algorithm.initializeDeck((*headerData).seed);
-
-	std::vector<unsigned char> streamKey = algorithm.getStreamKey(messageLength, alphabetLength);
-    std::string decodedMessage = MessageTransformation::getDecryptionMessage(*rawMessage, streamKey);
-    if (decodedMessage.empty()) {
-        errorMessage = "Unable to extract a message from the image.\nThe message is composed of invalid characters or\ncharacters not taken in charge by the decoding\nalgorithm.";
+        errorMessage = "The image does not contain any message.";
         return std::nullopt;
     }
 
-    return MessageTransformation::convertPrintableCharactersToUTF8(decodedMessage);
+    if (!decodedMessage.has_value())
+        return std::nullopt;
+    else
+        return MessageTransformation::convertPrintableCharactersToUTF8(*decodedMessage);
 }
 
 std::vector<unsigned char> MessageTransformation::generateRandomCharacters(size_t charactersToGenerate)
@@ -457,4 +412,114 @@ unsigned MessageTransformation::getRandomStride(unsigned minStride, unsigned max
 	std::mt19937 gen(std::random_device{}());
 	std::uniform_int_distribution<unsigned> dist(minStride, maxStride);
 	return dist(gen);
+}
+
+std::optional<std::string> MessageTransformation::getMessageFromGeneratedImage(std::span<const unsigned char> image, std::string& errorMessage) {
+    auto imagePtr = image.data() + sizeof(unsigned char);
+
+    std::vector<unsigned char> rawHeader(imagePtr, imagePtr + HeaderData::HEADER_SIZE);
+ 
+    std::optional<HeaderData> headerData = ImageHeader::getHeaderData(rawHeader, image.size());
+    if (!headerData.has_value()) {
+        errorMessage = "Unable to extract the header from the image.";
+        return std::nullopt;
+    }
+    else {
+        if ((*headerData).messageLength > static_cast<size_t>(image.size() - HeaderData::HEADER_SIZE)) {
+            errorMessage = "Unable to extract a message from the image.\nThe message length is invalid or exceeds the image size.";
+            return std::nullopt;
+        }
+        else if ((*headerData).messageLength == 0) {
+            errorMessage = "The current image does not contain any message.";
+            return std::nullopt;
+        }
+    }
+    const size_t messageLength = (*headerData).messageLength;
+    
+    imagePtr += (HeaderData::HEADER_SIZE + (*headerData).stride);
+    std::vector<unsigned char> rawMessage(imagePtr, imagePtr + messageLength);
+    
+    SolitaireAlgorithm algorithm;
+    algorithm.initializeDeck((*headerData).seed);
+
+    std::vector<unsigned char> streamKey = algorithm.getStreamKey(messageLength, alphabetLength);
+    std::string decodedMessage = MessageTransformation::getDecryptionMessage(rawMessage, streamKey);
+    if (decodedMessage.empty()) {
+        errorMessage = "Unable to extract a message from the image.\nThe message is composed of invalid characters or\ncharacters not taken in charge by the decoding\nalgorithm.";
+        return std::nullopt;
+    }
+    else
+        return decodedMessage;
+}
+
+std::optional<std::string> MessageTransformation::getMessageFromExistingImage(std::span<const unsigned char> image, int numberOfChannels, std::string& errorMessage) {
+    auto imagePtr = image.data() + sizeof(unsigned char);
+
+    std::optional<std::vector<unsigned char>> rawHeader;
+    if (numberOfChannels == 3)
+        rawHeader.emplace(imagePtr, imagePtr + HeaderData::HEADER_SIZE);
+    else {
+        rawHeader.emplace(HeaderData::HEADER_SIZE);
+        size_t headerPos = 0;
+        size_t imagePos = 1;
+        size_t pixelPos = 2;
+        for (; headerPos < HeaderData::HEADER_SIZE; ++imagePos) {
+            if (pixelPos % 4 == 0) {
+                pixelPos = 1;
+                continue;
+            }
+            (*rawHeader)[headerPos] = image[imagePos];
+            headerPos++;
+            pixelPos++;
+        }
+    }
+    std::optional<HeaderData> headerData = ImageHeader::getHeaderData(*rawHeader, image.size());
+    if (!headerData.has_value()) {
+        errorMessage = "Unable to extract the header from the image.";
+        return std::nullopt;
+    }
+    else {
+        if ((*headerData).messageLength > static_cast<size_t>(image.size() - HeaderData::HEADER_SIZE)) {
+            errorMessage = "Unable to extract a message from the image.\nThe message length is invalid or exceeds the image size.";
+            return std::nullopt;
+        }
+        else if ((*headerData).messageLength == 0) {
+            errorMessage = "The current image does not contain any message.";
+            return std::nullopt;
+        }
+    }
+    const size_t messageLength = (*headerData).messageLength;
+
+    std::optional<std::vector<unsigned char>> rawMessage;
+    if (numberOfChannels == 3) {
+        imagePtr += (HeaderData::HEADER_SIZE + (*headerData).stride);
+        rawMessage.emplace(imagePtr, imagePtr + messageLength);
+    }
+    else {
+        rawMessage.emplace((*headerData).messageLength);
+        size_t imagePos = HeaderData::HEADER_SIZE + sizeof(unsigned char) + (*headerData).stride;
+        size_t pixelPos = (HeaderData::HEADER_SIZE + sizeof(unsigned char) + (*headerData).stride) % 4 + 1;
+        size_t messagePos = 0;
+
+        for (; messagePos < messageLength; ++imagePos) {
+            if (pixelPos % 4 == 0) {
+                pixelPos = 1;
+                continue;
+            }
+            (*rawMessage)[messagePos] = image[imagePos];
+            messagePos++;
+            pixelPos++;
+        }
+    }
+    SolitaireAlgorithm algorithm;
+    algorithm.initializeDeck((*headerData).seed);
+
+    std::vector<unsigned char> streamKey = algorithm.getStreamKey(messageLength, alphabetLength);
+    std::string decodedMessage = MessageTransformation::getDecryptionMessage(*rawMessage, streamKey);
+    if (decodedMessage.empty()) {
+        errorMessage = "Unable to extract a message from the image.\nThe message is composed of invalid characters or\ncharacters not taken in charge by the decoding\nalgorithm.";
+        return std::nullopt;
+    }
+    else
+        return decodedMessage;
 }

@@ -11,7 +11,7 @@ namespace solitaire {
 		std::optional<std::vector<unsigned char>> data;
 		int width = 400;
 		int height = 400;
-		int channels = 3;
+		int channels = 4;
 	};
 
 	class FileManager {
