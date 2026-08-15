@@ -14,7 +14,8 @@ jobs:
   # job is execute on a windows virtual machine 
   build:
     runs-on: windows-latest
-
+    permissions:
+      contents: write
     # Creation of a build matrix
     # job executes each presets in parallel
     # which have to be in the 'CMakePresets.json' file
