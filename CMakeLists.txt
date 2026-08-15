@@ -7,7 +7,7 @@ endif()
 
 project("Solitaire" VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -82,10 +82,6 @@ target_link_libraries(Solitaire
 		imgui
 		stbimage
 )
-
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET Solitaire PROPERTY CXX_STANDARD 20)
-endif()
 
 install(TARGETS Solitaire
     RUNTIME DESTINATION .

@@ -1,13 +1,23 @@
+# creates a continuous integration pipeline named 'Build'
 name: Build
 
+# executes the following instructions each times there is a push or a pull request
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
   pull_request:
 
 jobs:
+  # job is execute on a windows virtual machine 
   build:
     runs-on: windows-latest
 
+    # Creation of a build matrix
+    # job executes each presets in parallel
+    # which have to be in the 'CMakePresets.json' file
     strategy:
       matrix:
         preset:
@@ -15,34 +25,51 @@ jobs:
           - x64-release
 
     steps:
+      # retrieves the repository's source code on continuous intinuous virtual machine   
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Setup Microsoft visual studio C++ compilation environment
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      # setup vcpkg installation in <workspace>/vcpkg
+      # and looking for dependencies if there is a 'vcpkg.json' in the repository
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgDirectory: '${{ github.workspace }}/vcpkg'
           vcpkgJsonGlob: '**/vcpkg.json'
 
+      # Configure the project with cmake using the current present
+      # VCPK_ROOT variable helps the config to locate vcpkg in the 'CMakePresets.json' file
       - name: Configure
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         run: cmake --preset ${{ matrix.preset }}
 
+      # build and compile the current preset using cmake and vcpkg
       - name: Build
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         run: cmake --build --preset ${{ matrix.preset }}
 
+      # install release configuration for 'x64-release' preset
+      # adds executable, resources and dll files inside a 'package' folder
+      # located at path <workspace>/out/package
+      # 'install' commands in 'CMakeLists.txt' file helps the configuration
+      # to find which file to add in the folder
+      # In this case, the executable and a dll file
       - name: Install Release
         if: matrix.preset == 'x64-release'
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         run: cmake --install out/build/x64-release --prefix out/package
 
+      # for release configuration 'x64-release', creates zip archive
+      # containing all files located at path <workspace>/out/package
+      # and named 'Solitaire-Windows-x64.zip'
+      # and overwrite the previous archive if necessary
       - name: Create ZIP
         if: matrix.preset == 'x64-release'
         shell: pwsh
@@ -52,9 +79,20 @@ jobs:
             -DestinationPath "Solitaire-Windows-x64.zip" `
             -Force
 
+      # publish the release archive as artifact in GitHub actions
+      # in folder 'Solitaire-Windows-x64'
+      # and will be available at url
+      # <workspace>/actions/runs/<run-ID>/artifacts/<artifact-ID>
       - name: Upload Release Package
         if: matrix.preset == 'x64-release'
         uses: actions/upload-artifact@v4
         with:
           name: Solitaire-Windows-x64
           path: Solitaire-Windows-x64.zip
+
+      # publish the release archive in 'releases' in GitHub repository
+      - name: Upload to GitHub Release
+        if: matrix.preset == 'x64-release' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Solitaire-Windows-x64.zip
