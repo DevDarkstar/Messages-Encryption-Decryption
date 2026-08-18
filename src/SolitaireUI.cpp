@@ -44,7 +44,6 @@ void SolitaireUI::resetUIParameters() {
 	this->infosBuffer[0] = '\0';
 	this->seed = 0;
 	deleteImageTexture(this->imageTexture);
-    this->resetImageParameters(generatedImageData);
     this->resetImageParameters(userInputImageData);
 }
 
@@ -73,7 +72,7 @@ int SolitaireUI::init() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(825, 825, "Solitaire's Message Encryption & Decryption", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(825, 850, "Solitaire's Message Encryption & Decryption", nullptr, nullptr);
     if (window == nullptr)
         return 1;
 
@@ -124,11 +123,13 @@ int SolitaireUI::init() {
 		if (ImGui::RadioButton("Encryption", this->uiStateVariables.mode == 0)) {
 			this->uiStateVariables.mode = 0;
             this->resetUIParameters();
+            this->resetImageParameters(this->generatedImageData);
 		}
 		ImGui::SameLine();
 		if (ImGui::RadioButton("Decryption", this->uiStateVariables.mode == 1)) {
 			this->uiStateVariables.mode = 1;
             this->resetUIParameters();
+            this->resetImageParameters(this->generatedImageData);
 		}
 
 		if (this->uiStateVariables.mode == 0)
@@ -197,55 +198,65 @@ void SolitaireUI::createEncryptionUI() {
     }
 
     // ** Case when the 'text file' radio button is selected **
-    if (this->uiStateVariables.encryptedMessageType == 1) {
-        ImGui::InputText("##Filepath", this->inputFilepathBuffer, IM_ARRAYSIZE(this->inputFilepathBuffer), this->uiStateVariables.inputTextFlags);
-        ImGui::SameLine();
-        if (ImGui::Button("Load file")) {
-			this->inputFilepathBuffer[0] = '\0';
-            this->infosBuffer[0] = '\0';
-            auto selection = pfd::open_file("Select a text file", ".", { "Text files (*.txt)", "*.txt" }).result();
-            if (!selection.empty())
-                snprintf(this->inputFilepathBuffer, sizeof(this->inputFilepathBuffer), "%s", selection[0].c_str());
-            if (strlen(this->inputFilepathBuffer) > 0) {
-                const std::optional<std::string> fileContent = FileManager::loadFile(this->inputFilepathBuffer);
-                if (!fileContent.has_value())
-                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' failed to load.", ErrorHandler::LOADING_FILE_ERROR, selection[0].c_str());
-                else
-                    snprintf(this->inputTextBuffer.data(), this->inputTextBuffer.size(), "%s", (*fileContent).c_str());
-            }
+    ImGui::BeginDisabled(this->uiStateVariables.encryptedMessageType != 1);
+    ImGui::InputText("##Filepath", this->inputFilepathBuffer, IM_ARRAYSIZE(this->inputFilepathBuffer), this->uiStateVariables.inputTextFlags);
+    ImGui::SameLine();
+    if (ImGui::Button("Load text file")) {
+		this->inputFilepathBuffer[0] = '\0';
+        this->infosBuffer[0] = '\0';
+        auto selection = pfd::open_file("Select a text file", ".", { "Text files (*.txt)", "*.txt" }).result();
+        if (!selection.empty())
+            snprintf(this->inputFilepathBuffer, sizeof(this->inputFilepathBuffer), "%s", selection[0].c_str());
+        if (strlen(this->inputFilepathBuffer) > 0) {
+            const std::optional<std::string> fileContent = FileManager::loadFile(this->inputFilepathBuffer);
+            if (!fileContent.has_value())
+                snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' failed to load.", ErrorHandler::LOADING_FILE_ERROR, selection[0].c_str());
+            else
+                snprintf(this->inputTextBuffer.data(), this->inputTextBuffer.size(), "%s", (*fileContent).c_str());
         }
     }
+    ImGui::EndDisabled();
 
     // ** Seed range selecton **
     ImGui::InputInt("Seed to generate the stream key", &this->seed);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("The stream key is used to encrypt the message.\nIf the value is set to 0, the seed will be chosen randomly");
+        ImGui::SetTooltip("The stream key is used to encrypt the message.\nIf the value is set to 0, the seed will be randomly chosen.");
     if (this->seed < 0) this->seed = 0;
 
+    // ** Generated image width and height personalization
+    ImGui::BeginDisabled(this->uiStateVariables.useExistingImage);
+    ImGui::InputInt("Image width", &this->generatedImageData.width);
+    if (this->generatedImageData.width < 0) this->generatedImageData.width = 0;
+    ImGui::InputInt("Image height", &this->generatedImageData.height);
+    if (this->generatedImageData.height < 0) this->generatedImageData.height = 0;
+    ImGui::EndDisabled();
+
     // ** CheckBox for loading existing image **
-    if (ImGui::Checkbox("Use existing image ?", &this->uiStateVariables.useExistingImage))
-        this->userInputImageBuffer[0] = '\0';
+    if (ImGui::Checkbox("Use existing image ?", &this->uiStateVariables.useExistingImage)) {
+        this->resetImageParameters(this->generatedImageData);
+    }
 
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Turn on this option if you want to hide\nyour message inside an existing image.");
 
     // ** Case when the loading existing image checkbox is checked **
-    if (this->uiStateVariables.useExistingImage) {
-        ImGui::SameLine();
-        ImGui::InputText("##ImageInput", this->userInputImageBuffer, IM_ARRAYSIZE(this->userInputImageBuffer), ImGuiInputTextFlags_ReadOnly);
-        ImGui::SameLine();
-        if (ImGui::Button("Load Image##UserInput")) {
-            this->infosBuffer[0] = '\0';
-            this->userInputImageBuffer[0] = '\0';
-            auto selection = pfd::open_file("Select an image file", ".", { "Image files (*.png, *.jpg, *.jpeg)", "*.png *.jpg *.jpeg" }).result();
-            if (!selection.empty()) {
-                if (stbi_is_16_bit(selection[0].c_str()))
-                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s", ErrorHandler::LOADING_16_BITS_IMAGE_ERROR);
-                else
-                    snprintf(this->userInputImageBuffer, sizeof(this->userInputImageBuffer), "%s", selection[0].c_str());
-            }
+    ImGui::BeginDisabled(!this->uiStateVariables.useExistingImage);
+    ImGui::SameLine();
+    ImGui::InputText("##ImageInput", this->userInputImageBuffer, IM_ARRAYSIZE(this->userInputImageBuffer), ImGuiInputTextFlags_ReadOnly);
+    ImGui::SameLine();
+    if (ImGui::Button("Load Image##UserInput")) {
+        this->infosBuffer[0] = '\0';
+        this->userInputImageBuffer[0] = '\0';
+        auto selection = pfd::open_file("Select an image file", ".", { "Image files (*.png, *.jpg, *.jpeg)", "*.png *.jpg *.jpeg" }).result();
+        if (!selection.empty()) {
+            if (stbi_is_16_bit(selection[0].c_str()))
+                snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s", ErrorHandler::LOADING_16_BITS_IMAGE_ERROR);
+            else
+                snprintf(this->userInputImageBuffer, sizeof(this->userInputImageBuffer), "%s", selection[0].c_str());
         }
     }
+    ImGui::EndDisabled();
+
     // ** Block for the message to encrypt **
     ImGui::BeginChild("EncryptMessage", ImVec2(400, 440), ImGuiChildFlags_Borders);
     ImGui::SeparatorText("Message to encrypt");
@@ -267,66 +278,68 @@ void SolitaireUI::createEncryptionUI() {
 	ImGui::Text("Message length : %llu characters", strlen(this->inputTextBuffer.data()));
 
     // ** Encryption button **
-    if (this->inputTextBuffer[0] != '\0') {
-        if (ImGui::Button("Encrypt message")) {
-            this->generatedImageData.data = std::nullopt;
-            this->userInputImageData.data = std::nullopt;
-            this->infosBuffer[0] = '\0';
-            std::string_view messageToEncrypt(this->inputTextBuffer.data());
-            deleteImageTexture(this->imageTexture);
-            if(strlen(this->userInputImageBuffer) > 0){
-                // Try to load user input image whom purpose is to hide the encrypted message inside
-                this->userInputImageData = FileManager::loadImage(this->userInputImageBuffer);
-                if (!this->userInputImageData.data.has_value())
-                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nImage '%s' failed to load.\nMake sure that the filepath is correct and the image has 3 or 4 channels.", ErrorHandler::LOADING_FILE_ERROR, this->inputFilepathBuffer);
-                else {
-                    this->generatedImageData.width = this->userInputImageData.width;
-                    this->generatedImageData.height = this->userInputImageData.height;
-                    this->generatedImageData.channels = this->userInputImageData.channels;
-                    this->generatedImageData.data = MessageTransformation::createImage(messageToEncrypt, static_cast<unsigned char>(this->seed), this->userInputImageData);
-                    if (!this->generatedImageData.data.has_value())
-                        snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nThe message to encrypt is too large for the image\n'%s'.", ErrorHandler::MESSAGE_LENGTH_ERROR, this->userInputImageBuffer);
-                    else
-                        generateImageTexture(this->imageTexture, this->userInputImageData);
-                }
-            }
+    ImGui::BeginDisabled(this->inputTextBuffer[0] == '\0');
+    if (ImGui::Button("Encrypt message")) {
+        this->generatedImageData.data = std::nullopt;
+        this->userInputImageData.data = std::nullopt;
+        this->infosBuffer[0] = '\0';
+        std::string_view messageToEncrypt(this->inputTextBuffer.data());
+        deleteImageTexture(this->imageTexture);
+        if(this->uiStateVariables.useExistingImage){
+            // Try to load user input image whom purpose is to hide the encrypted message inside
+            this->userInputImageData = FileManager::loadImage(this->userInputImageBuffer);
+            if (!this->userInputImageData.data.has_value())
+                snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nImage '%s' failed to load.\nMake sure that the filepath is correct and the image has 3 or 4 channels.", ErrorHandler::LOADING_FILE_ERROR, this->inputFilepathBuffer);
             else {
-                this->generatedImageData.data = MessageTransformation::createImage(messageToEncrypt, static_cast<unsigned char>(this->seed), this->generatedImageData);
+                this->generatedImageData.width = this->userInputImageData.width;
+                this->generatedImageData.height = this->userInputImageData.height;
+                this->generatedImageData.channels = this->userInputImageData.channels;
+                this->generatedImageData.data = MessageTransformation::createImage(messageToEncrypt, static_cast<unsigned char>(this->seed), this->userInputImageData);
                 if (!this->generatedImageData.data.has_value())
-                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nThe message to encrypt is too large for the image\n'%s'.", ErrorHandler::MESSAGE_LENGTH_ERROR, this->userInputImageBuffer);
+                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nThe message to encrypt is too large for the chosen image.", ErrorHandler::MESSAGE_LENGTH_ERROR);
                 else
-                    generateImageTexture(this->imageTexture, this->generatedImageData);
+                    generateImageTexture(this->imageTexture, this->userInputImageData);
             }
         }
-		ImGui::SameLine();
-        // ** Reset button **
-        if (ImGui::Button("Reset")) {
-			this->resetUIParameters();
-            this->resetUIStateVariables();
+        else {
+            this->generatedImageData.data = MessageTransformation::createImage(messageToEncrypt, static_cast<unsigned char>(this->seed), this->generatedImageData);
+            if (!this->generatedImageData.data.has_value())
+                snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nThe message to encrypt is too large for the chosen image.", ErrorHandler::MESSAGE_LENGTH_ERROR);
+            else
+                generateImageTexture(this->imageTexture, this->generatedImageData);
         }
     }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    // ** Reset button **
+    if (ImGui::Button("Reset")) {
+        this->resetUIParameters();
+        this->resetUIStateVariables();
+        this->resetImageParameters(generatedImageData);
+    }
+    ImGui::SameLine();
 
     // ** Save image button **
-    if (this->imageTexture != 0) {
-        ImGui::SameLine();
-        if (ImGui::Button("Save image")) {
-            auto selection = pfd::save_file("Save image as", "", { "Image files (*.png)", "*.png" }).result();
-            if (!selection.empty()) {
-                this->infosBuffer[0] = '\0';
-                if (!selection.ends_with(".png"))
-                    snprintf(this->infosBuffer, sizeof(infosBuffer), "%s\n\nFile '%s' must have a '.png' extension.", ErrorHandler::FILE_FORMAT_ERROR, selection.c_str());
-                else {
-                    int result = FileManager::saveMessageAsImage(selection.c_str(), this->generatedImageData);
-                    if (!result)
-                        snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' saving failed.", ErrorHandler::SAVING_FILE_ERROR, selection.c_str());
-                    else
-                        snprintf(this->infosBuffer, sizeof(this->infosBuffer), "Image '%s'\nhas been saved successfully.", selection.c_str());
-                    deleteImageTexture(this->imageTexture);
-                    this->generatedImageData.data = std::nullopt;
-                }
+    ImGui::BeginDisabled(this->imageTexture == 0);
+    if (ImGui::Button("Save image")) {
+        auto selection = pfd::save_file("Save image as", "", { "Image files (*.png)", "*.png" }).result();
+        if (!selection.empty()) {
+            this->infosBuffer[0] = '\0';
+            if (!selection.ends_with(".png"))
+                snprintf(this->infosBuffer, sizeof(infosBuffer), "%s\n\nFile '%s' must have a '.png' extension.", ErrorHandler::FILE_FORMAT_ERROR, selection.c_str());
+            else {
+                int result = FileManager::saveMessageAsImage(selection.c_str(), this->generatedImageData);
+                if (!result)
+                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' saving failed.", ErrorHandler::SAVING_FILE_ERROR, selection.c_str());
+                else
+                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "Image '%s'\nhas been saved successfully.", selection.c_str());
+                deleteImageTexture(this->imageTexture);
+                this->generatedImageData.data = std::nullopt;
             }
         }
     }
+    ImGui::EndDisabled();
 }
 
 void SolitaireUI::createDecryptionUI() {
@@ -376,44 +389,45 @@ void SolitaireUI::createDecryptionUI() {
     // ** Length of the decrypted message **
     ImGui::Text("Decrypted message length : %llu characters", strlen(this->inputTextBuffer.data()));
 
-    if (this->imageTexture != 0) {
-        // ** Decrypt message button **
-        if (ImGui::Button("Decrypt message")) {
-            this->inputTextBuffer[0] = '\0';
-            this->infosBuffer[0] = '\0';
-            std::string errorMessage;
-			const std::optional<std::string> decryptedMessage = MessageTransformation::getMessageFromImage(*this->generatedImageData.data, this->generatedImageData.channels, errorMessage);
-            if (!decryptedMessage.has_value())
-                snprintf(this->infosBuffer, sizeof(infosBuffer), "%s\n\n%s", ErrorHandler::DECRYPTED_MESSAGE_ERROR, errorMessage.c_str());
-            else
-                snprintf(this->inputTextBuffer.data(), this->inputTextBuffer.size(), "%s", (*decryptedMessage).c_str());
-        }
-        ImGui::SameLine();
-        // ** Reset button **
-        if (ImGui::Button("Reset")) {
-            this->resetUIParameters();
-            this->resetUIStateVariables();
-        }
+    ImGui::BeginDisabled(this->imageTexture == 0);
+    // ** Decrypt message button **
+    if (ImGui::Button("Decrypt message")) {
+        this->inputTextBuffer[0] = '\0';
+        this->infosBuffer[0] = '\0';
+        std::string errorMessage;
+		const std::optional<std::string> decryptedMessage = MessageTransformation::getMessageFromImage(*this->generatedImageData.data, this->generatedImageData.channels, errorMessage);
+        if (!decryptedMessage.has_value())
+            snprintf(this->infosBuffer, sizeof(infosBuffer), "%s\n\n%s", ErrorHandler::DECRYPTED_MESSAGE_ERROR, errorMessage.c_str());
+        else
+            snprintf(this->inputTextBuffer.data(), this->inputTextBuffer.size(), "%s", (*decryptedMessage).c_str());
     }
+    ImGui::EndDisabled();
 
-    if (this->inputTextBuffer[0] != '\0' && this->imageTexture != 0) {
-        ImGui::SameLine();
-        // ** Export decrypted message button **
-        if (ImGui::Button("Export Decrypted Message")) {
-            auto selection = pfd::save_file("Save decrypted message as", "", { "Text files (*.txt)", "*.txt" }).result();
-            if (!selection.empty()) {
-                if (!selection.ends_with(".txt"))
-                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' must have a '.txt' extension.", ErrorHandler::FILE_FORMAT_ERROR, selection.c_str());
+    ImGui::SameLine();
+    // ** Reset button **
+    if (ImGui::Button("Reset")) {
+        this->resetUIParameters();
+        this->resetUIStateVariables();
+    } 
+    ImGui::SameLine();
+
+    ImGui::BeginDisabled(this->inputTextBuffer[0] == '\0' || this->imageTexture == 0);
+    // ** Export decrypted message button **
+    if (ImGui::Button("Export Decrypted Message")) {
+        auto selection = pfd::save_file("Save decrypted message as", "", { "Text files (*.txt)", "*.txt" }).result();
+        if (!selection.empty()) {
+            if (!selection.ends_with(".txt"))
+                snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' must have a '.txt' extension.", ErrorHandler::FILE_FORMAT_ERROR, selection.c_str());
+            else {
+                int result = FileManager::saveMessageAsFile(selection.c_str(), this->inputTextBuffer.data());
+                if (!result)
+                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' saving failed.", ErrorHandler::SAVING_FILE_ERROR, selection.c_str());
                 else {
-                    int result = FileManager::saveMessageAsFile(selection.c_str(), this->inputTextBuffer.data());
-                    if (!result)
-                        snprintf(this->infosBuffer, sizeof(this->infosBuffer), "%s\n\nFile '%s' saving failed.", ErrorHandler::SAVING_FILE_ERROR, selection.c_str());
-                    else {
-                        snprintf(this->infosBuffer, sizeof(this->infosBuffer), "Decrypted message saved in file '%s'.", selection.c_str());
-                        this->inputTextBuffer[0] = '\0';
-                    }
+                    snprintf(this->infosBuffer, sizeof(this->infosBuffer), "Decrypted message saved in file '%s'.", selection.c_str());
+                    this->inputTextBuffer[0] = '\0';
                 }
             }
         }
     }
+    ImGui::EndDisabled();
 }
