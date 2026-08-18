@@ -11,8 +11,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui)
-set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
+set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -21,36 +21,36 @@ add_library (utfcpp INTERFACE)
 
 target_include_directories (utfcpp 
 	INTERFACE
-		${CMAKE_CURRENT_SOURCE_DIR}/external/utfcpp
+		"${CMAKE_CURRENT_SOURCE_DIR}/external/utfcpp"
 )
 
 add_library (portable_file_dialogs INTERFACE)
 
 target_include_directories (portable_file_dialogs 
 	INTERFACE
-		${CMAKE_CURRENT_SOURCE_DIR}/external/portablefiledialogs
+		"${CMAKE_CURRENT_SOURCE_DIR}/external/portablefiledialogs"
 )
 
 add_library (stbimage INTERFACE)
 
 target_include_directories (stbimage 
 	INTERFACE
-		${CMAKE_CURRENT_SOURCE_DIR}/external/stbimage
+		"${CMAKE_CURRENT_SOURCE_DIR}/external/stbimage"
 )
 
 add_library(imgui
-    ${IMGUI_DIR}/imgui.cpp
-	${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+    "${IMGUI_DIR}/imgui.cpp"
+	"${IMGUI_DIR}/imgui_draw.cpp"
+    "${IMGUI_DIR}/imgui_tables.cpp"
+    "${IMGUI_DIR}/imgui_widgets.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
 )
 
 target_include_directories(imgui
     PUBLIC
         ${IMGUI_DIR}
-        ${IMGUI_DIR}/backends
+        "${IMGUI_DIR}/backends"
 )
 
 target_link_libraries(imgui
@@ -60,19 +60,19 @@ target_link_libraries(imgui
 )
 
 add_executable (Solitaire
-	${SRC_DIR}/Deck.cpp
-	${SRC_DIR}/SolitaireAlgorithm.cpp
-	${SRC_DIR}/main.cpp
-	${SRC_DIR}/MessageTransformation.cpp 
-	${SRC_DIR}/FileManager.cpp
-	${SRC_DIR}/ImageHeader.cpp
-	${SRC_DIR}/SolitaireUI.cpp
-	${SRC_DIR}/stb_image_impl.cpp
+	"${SRC_DIR}/Deck.cpp"
+	"${SRC_DIR}/SolitaireAlgorithm.cpp"
+	"${SRC_DIR}/main.cpp"
+	"${SRC_DIR}/MessageTransformation.cpp" 
+	"${SRC_DIR}/FileManager.cpp"
+	"${SRC_DIR}/ImageHeader.cpp"
+	"${SRC_DIR}/SolitaireUI.cpp"
+	"${SRC_DIR}/stb_image_impl.cpp"
 )
 
 target_include_directories (Solitaire
 	PRIVATE
-		${IMGUI_DIR}/backends
+		"${IMGUI_DIR}/backends"
 )
 
 target_link_libraries(Solitaire 
